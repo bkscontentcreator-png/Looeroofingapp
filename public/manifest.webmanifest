@@ -1,0 +1,20 @@
+{
+  "name": "LOOE ROOFING EXPERTS LTD",
+  "short_name": "LOOE Roofing",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    {
+      "src": "/looe-roofing-experts.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/looe-roofing-experts.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
