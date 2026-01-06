@@ -1,0 +1,3 @@
+﻿[build.environment]
+VITE_BUILD_ID = "${COMMIT_REF}"
+
