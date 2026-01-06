@@ -512,9 +512,24 @@ export default function App(){
     }
   }
 
-  return (
-    <div style={{minHeight:"100vh", padding:16}}>
-      <div style={{maxWidth:1280, margin:"0 auto"}}>
+   return (
+    <div style={{ minHeight: "100vh", padding: 16 }}>
+      <div
+        style={{
+          position: "fixed",
+          bottom: 10,
+          right: 10,
+          zIndex: 99999,
+          background: "black",
+          color: "white",
+          padding: "6px 10px",
+          borderRadius: "8px",
+          fontSize: "12px",
+        }}
+      >
+        BUILD: 22fde66
+      </div>
+      <div style={{ maxWidth: 1280, margin: "0 auto" }}>
         <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-end", gap:12, flexWrap:"wrap"}}>
           <div style={{display:"flex", gap:12, alignItems:"center"}}>
             <div style={{height:44, width:44, borderRadius:16, overflow:"hidden", border:"1px solid #e2e8f0", background:"#fff"}}>
