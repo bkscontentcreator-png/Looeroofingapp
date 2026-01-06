@@ -16,13 +16,11 @@ const STORAGE_KEY = "looe_roofing_experts_fullsync_v1";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const ENV_OK = Boolean(SUPABASE_URL) && Boolean(SUPABASE_ANON_KEY);
+
 const supabase = SUPABASE_URL && SUPABASE_ANON_KEY ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
 
 const BRAND = { appName: "LOOE ROOFING EXPERTS LTD", logoPath: "/looe-roofing-experts.png" };
-
-// Mobile-friendly presets (edit anytime)
-const VAN_PRESETS = ["Van 1", "Van 2", "Van 3"];
-const TEAM_PRESETS = ["Team A", "Team B", "Team C"];
 
 const STAGES = [
   { key: "lead_in", label: "Lead In" },
@@ -59,14 +57,6 @@ function todayISO(){ const d=new Date(); const p=n=>String(n).padStart(2,"0"); r
 function stageLabel(k){ return STAGES.find(s=>s.key===k)?.label ?? k; }
 function roleLabel(r){ return r==="owner"?"Owner":r==="admin"?"Admin":r==="team_lead"?"Team Lead":(r||"—"); }
 function memberDisplay(m){ return m.display_name || m.email || m.user_id; }
-
-function dueStatus(dueISO){
-  if(!dueISO) return { text:"", kind:"none" };
-  const today = todayISO();
-  if(dueISO < today) return { text:`Due ${dueISO} (overdue)`, kind:"overdue" };
-  if(dueISO === today) return { text:`Due today (${dueISO})`, kind:"today" };
-  return { text:`Due ${dueISO}`, kind:"upcoming" };
-}
 
 function seed(){
   return {
@@ -206,11 +196,6 @@ async function cloudFetchActivity(orgId, leadId, limit=30){
 
 export default function App(){
   const [state, setState] = useState(()=>loadState());
-  const [isMobile, setIsMobile] = useState(() => window.matchMedia?.("(max-width: 768px)")?.matches ?? false);
-  const [showFilters, setShowFilters] = useState(false);
-  const [quickAddOpen, setQuickAddOpen] = useState(false);
-  const [quickLead, setQuickLead] = useState({ customerName:"", phone:"", address:"", source:"Website" });
-  const [assignedSearch, setAssignedSearch] = useState("");
   const [query, setQuery] = useState("");
   const [stageFilter, setStageFilter] = useState("all");
   const [vanFilter, setVanFilter] = useState("all");
@@ -225,37 +210,11 @@ export default function App(){
   const [inviteCode, setInviteCode] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const syncingRef = useRef(false);
-  const checklistScrollRef = useRef(null);
-  const stageHeaderRefs = useRef({});
 
   useEffect(()=>{ document.title = BRAND.appName; }, []);
-useEffect(() => {
-  const mq = window.matchMedia("(max-width: 768px)");
-  const onChange = () => setIsMobile(mq.matches);
-  onChange();
-  mq.addEventListener?.("change", onChange);
-  return () => mq.removeEventListener?.("change", onChange);
-}, []);
-
   useEffect(()=>{ saveState(state); }, [state]);
 
   const active = useMemo(()=> state.leads.find(l=>l.id===activeId) || null, [state.leads, activeId]);
-
-  const groupedChecklist = useMemo(()=>{
-    if(!active) return [];
-    const groups = STAGES.map(st=>({ stage: st, items: [] }));
-    const byKey = new Map(groups.map(g=>[g.stage.key, g]));
-    active.checklist.forEach(it=>{
-      const g = byKey.get(it.stage);
-      if(g) g.items.push(it);
-    });
-    return groups.filter(g=>g.items.length);
-  }, [active]);
-
-  const currentStageKey = useMemo(()=>{
-    if(!active) return null;
-    return computeLeadStageFromChecklist(active.checklist);
-  }, [active]);
 
   const canDelete = cloudStatus==="local_only" || state.cloud?.role==="owner" || state.cloud?.role==="admin";
   const canInvite = state.cloud?.role==="owner" || state.cloud?.role==="admin";
@@ -369,44 +328,16 @@ useEffect(() => {
     return list;
   }, [state.leads, query, stageFilter, vanFilter, assignedFilter]);
 
-  function newLead(preset = {}){
+  function newLead(){
     const id=uid();
-    const lead={ id,
-      customerName: preset.customerName ?? "",
-      phone: preset.phone ?? "",
-      address: preset.address ?? "",
-      source: preset.source ?? "",
-      createdISO: todayISO(),
-      stage:"lead_in",
-      notes: preset.notes ?? "",
-      nextActionLabel: preset.nextActionLabel ?? "",
-      nextActionDueISO: preset.nextActionDueISO ?? "",
-      checklist: buildChecklist(),
-      assignedTo: preset.assignedTo ?? "",
-      team: preset.team ?? "",
-      van: preset.van ?? "",
+    const lead={ id, customerName:"", phone:"", address:"", source:"", createdISO: todayISO(), stage:"lead_in",
+      notes:"", nextActionLabel:"", nextActionDueISO:"", checklist: buildChecklist(), assignedTo:"", team:"", van:"",
       updatedAt: new Date().toISOString()
     };
     setState(s=>({ ...s, leads:[lead, ...s.leads] }));
     setActiveId(id);
     setTab("checklist");
     // cloud create log happens on first save
-  }
-
-  function openQuickAdd(){
-    setQuickLead({ customerName:"", phone:"", address:"", source:"Website" });
-    setQuickAddOpen(true);
-  }
-
-  function createQuickLead(){
-    const preset = {
-      customerName: quickLead.customerName?.trim() || "",
-      phone: quickLead.phone?.trim() || "",
-      address: quickLead.address?.trim() || "",
-      source: quickLead.source?.trim() || "",
-    };
-    setQuickAddOpen(false);
-    newLead(preset);
   }
 
   async function saveLead(updated){
@@ -457,20 +388,6 @@ useEffect(() => {
         setActivityItems(items);
       }).catch(e=>setCloudError(e?.message || String(e)));
     }
-  }
-
-  function jumpToCurrentStage(){
-    if(!currentStageKey) return;
-    const el = stageHeaderRefs.current[currentStageKey];
-    if(el?.scrollIntoView){
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }
-
-  function markStageDone(stageKey){
-    if(!active) return;
-    const next = active.checklist.map(it=> it.stage===stageKey ? { ...it, status:"done" } : it);
-    saveLead({ ...active, checklist: next });
   }
 
   function duplicateLead(id){
@@ -596,9 +513,8 @@ useEffect(() => {
   }
 
   return (
-    <div style={{minHeight:"100vh", padding: isMobile ? 10 : 16, paddingBottom: isMobile ? 110 : 16}}>
+    <div style={{minHeight:"100vh", padding:16}}>
       <div style={{maxWidth:1280, margin:"0 auto"}}>
-        <div style={{position:"sticky", top:0, zIndex:20, background:"rgba(255,255,255,0.92)", backdropFilter:"blur(8px)", padding: isMobile ? "10px 8px" : "12px 0", borderBottom:"1px solid #e2e8f0"}}>
         <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-end", gap:12, flexWrap:"wrap"}}>
           <div style={{display:"flex", gap:12, alignItems:"center"}}>
             <div style={{height:44, width:44, borderRadius:16, overflow:"hidden", border:"1px solid #e2e8f0", background:"#fff"}}>
@@ -610,6 +526,10 @@ useEffect(() => {
               </motion.div>
               <div style={{fontSize:13, color:"#64748b"}}>
                 Full synced app ✅ {cloudStatus==="signed_in" ? `· Synced · ${roleLabel(state.cloud?.role)}` : (supabase ? "· Not signed in" : "· Local only")}
+<div style={{fontSize:12, marginTop:6, color: ENV_OK ? "#16a34a" : "#b91c1c"}}>
+  Supabase env loaded: {String(ENV_OK)}
+</div>
+
               </div>
               {cloudError ? <div style={{marginTop:8, fontSize:12, color:"#b91c1c"}}>Cloud error: {cloudError}</div> : null}
             </div>
@@ -627,11 +547,10 @@ useEffect(() => {
               )
             ) : null}
 
-            <Button onClick={()=> (isMobile ? setQuickAddOpen(true) : newLead())}><Plus size={16}/>New lead</Button>
+            <Button onClick={newLead}><Plus size={16}/>New lead</Button>
             <Button variant="outline" onClick={exportCSV}><Download size={16}/>Export CSV</Button>
             <Button variant="outline" onClick={()=>window.print()}><Printer size={16}/>Print</Button>
           </div>
-        </div>
         </div>
 
         <Card style={{marginTop:16}}>
@@ -640,14 +559,8 @@ useEffect(() => {
               <div style={{flex:"1 1 280px", display:"flex", gap:8, alignItems:"center"}}>
                 <Search size={16} color="#64748b"/>
                 <Input value={query} onChange={(e)=>setQuery(e.target.value)} placeholder="Search name, address, notes, assigned, van..." />
-              {isMobile ? (
-                <Button variant="outline" onClick={()=>setShowFilters(v=>!v)} style={{height:44}}>
-                  {showFilters ? "Hide filters" : "Filters"}
-                </Button>
-              ) : null}
               </div>
 
-              {(!isMobile || showFilters) ? (
               <div style={{display:"flex", gap:8, flexWrap:"wrap"}}>
                 <div>
                   <Label>Stage</Label>
@@ -673,13 +586,11 @@ useEffect(() => {
                   </select>
                 </div>
               </div>
-              ) : null}
             </div>
           </CardContent>
         </Card>
 
-        {(!isMobile || !active) ? (
-        <div style={{marginTop:16, display:"grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(340px, 1fr))", gap:12}}>
+        <div style={{marginTop:16, display:"grid", gridTemplateColumns:"repeat(auto-fill, minmax(340px, 1fr))", gap:12}}>
           {filtered.length ? filtered.map(lead=>(
             <Card key={lead.id}>
               <CardHeader className="pb-3">
@@ -687,16 +598,6 @@ useEffect(() => {
                   <div style={{minWidth:0}}>
                     <CardTitle className="text-base">{lead.customerName || "(Unnamed lead)"}</CardTitle>
                     <div style={{fontSize:13, color:"#64748b", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{lead.address || "—"}</div>
-                    {(lead.nextActionLabel || lead.nextActionDueISO) ? (
-                      <div style={{marginTop:6, fontSize:12, color:"#334155", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>
-                        <strong>Next:</strong> {lead.nextActionLabel || "(not set)"}
-                        {lead.nextActionDueISO ? (
-                          <span style={{marginLeft:8, color: dueStatus(lead.nextActionDueISO).kind==="overdue" ? "#b91c1c" : "#64748b"}}>
-                            {dueStatus(lead.nextActionDueISO).text}
-                          </span>
-                        ) : null}
-                      </div>
-                    ) : null}
                     <div style={{marginTop:8, display:"flex", gap:6, flexWrap:"wrap"}}>
                       <Badge>{stageLabel(lead.stage)}</Badge>
                       {lead.van ? <Badge>Van: {lead.van}</Badge> : null}
@@ -726,7 +627,6 @@ useEffect(() => {
             </Card>
           )}
         </div>
-        ) : null}
 
         {active ? (
           <Card style={{marginTop:18}}>
@@ -739,7 +639,7 @@ useEffect(() => {
                 <div style={{display:"flex", gap:8}}>
                   <Button variant={tab==="checklist"?"default":"outline"} onClick={()=>setTab("checklist")}>Checklist</Button>
                   <Button variant={tab==="activity"?"default":"outline"} onClick={()=>setTab("activity")}>Activity</Button>
-                  <Button variant="outline" onClick={()=>setActiveId(null)}>{isMobile ? "Back" : "Close"}</Button>
+                  <Button variant="outline" onClick={()=>setActiveId(null)}>Close</Button>
                 </div>
               </div>
             </CardHeader>
@@ -768,97 +668,30 @@ useEffect(() => {
                 </div>
 
                 <div>
-                  <Label>Next action</Label>
-                  <Input value={active.nextActionLabel} onChange={(e)=>updateActive({ nextActionLabel:e.target.value })} placeholder="e.g., Call back, Book survey" />
-                </div>
-                <div>
-                  <Label>Next action due</Label>
-                  <Input type="date" value={active.nextActionDueISO} onChange={(e)=>updateActive({ nextActionDueISO:e.target.value })} />
-                  {active.nextActionDueISO ? (
-                    <div style={{fontSize:12, color: dueStatus(active.nextActionDueISO).kind==="overdue" ? "#b91c1c" : "#64748b", marginTop:6}}>
-                      {dueStatus(active.nextActionDueISO).text}
-                    </div>
-                  ) : (
-                    <div style={{fontSize:12, color:"#64748b", marginTop:6}}>Optional: set a due date to show on the lead card.</div>
-                  )}
-                </div>
-
-                <div>
                   <Label>Van</Label>
-                  <select
-                    value={active.van || ""}
-                    onChange={(e)=>updateActive({ van: e.target.value })}
-                    style={{width:"100%", border:"1px solid #e2e8f0", borderRadius:12, padding:"10px 10px", height:44}}
-                  >
-                    <option value="">Unassigned</option>
-                    {VAN_PRESETS.map(v=><option key={v} value={v}>{v}</option>)}
-                  </select>
-                  <Input style={{marginTop:8, height:44}} value={active.van} onChange={(e)=>updateActive({ van:e.target.value })} placeholder="Type/override van" />
+                  <Input value={active.van} onChange={(e)=>updateActive({ van:e.target.value })} placeholder="e.g., Van 1" />
                 </div>
                 <div>
                   <Label>Team</Label>
-                  <select
-                    value={active.team || ""}
-                    onChange={(e)=>updateActive({ team: e.target.value })}
-                    style={{width:"100%", border:"1px solid #e2e8f0", borderRadius:12, padding:"10px 10px", height:44}}
-                  >
-                    <option value="">Unassigned</option>
-                    {TEAM_PRESETS.map(t=><option key={t} value={t}>{t}</option>)}
-                  </select>
-                  <Input style={{marginTop:8, height:44}} value={active.team} onChange={(e)=>updateActive({ team:e.target.value })} placeholder="Type/override team" />
+                  <Input value={active.team} onChange={(e)=>updateActive({ team:e.target.value })} placeholder="e.g., Team A" />
                 </div>
 
                 <div>
-                  <Label>Assigned to</Label>
-                  {cloudStatus!=="signed_in" ? (
-                    <>
-                      <div style={{fontSize:12, color:"#64748b", marginTop:6}}>Sign in to pick from your team list.</div>
-                      <Input value={active.assignedTo} onChange={(e)=>updateActive({ assignedTo:e.target.value })} placeholder="Type a name" />
-                    </>
-                  ) : isMobile ? (
-                    <>
-                      <Input value={assignedSearch} onChange={(e)=>setAssignedSearch(e.target.value)} placeholder="Search team…" />
-                      <div style={{marginTop:8, border:"1px solid #e2e8f0", borderRadius:16, overflow:"hidden", background:"#fff"}}>
-                        <button
-                          onClick={()=>updateActive({ assignedTo:"" })}
-                          style={{width:"100%", textAlign:"left", padding:"12px 12px", border:0, background:"transparent"}}
-                        >
-                          Unassigned
-                        </button>
-                        {members
-                          .filter(m=>memberDisplay(m).toLowerCase().includes(assignedSearch.trim().toLowerCase()))
-                          .slice(0, 8)
-                          .map(m=>{
-                            const label = memberDisplay(m);
-                            return (
-                              <button
-                                key={m.user_id}
-                                onClick={()=>{ updateActive({ assignedTo: label }); setAssignedSearch(""); }}
-                                style={{width:"100%", textAlign:"left", padding:"12px 12px", border:0, borderTop:"1px solid #e2e8f0", background:"transparent"}}
-                              >
-                                {label} · {roleLabel(m.role)}
-                              </button>
-                            );
-                          })}
-                      </div>
-                      <div style={{fontSize:12, color:"#64748b", marginTop:6}}>Tip: start typing to filter. Tap to assign.</div>
-                    </>
-                  ) : (
-                    <>
-                      <select
-                        value={active.assignedTo || ""}
-                        onChange={(e)=>updateActive({ assignedTo: e.target.value })}
-                        style={{width:"100%", border:"1px solid #e2e8f0", borderRadius:12, padding:"10px 10px", height:44}}
-                      >
-                        <option value="">Unassigned</option>
-                        {members.map(m=>(
-                          <option key={m.user_id} value={memberDisplay(m)}>{memberDisplay(m)} · {roleLabel(m.role)}</option>
-                        ))}
-                      </select>
-                      <div style={{fontSize:12, color:"#64748b", marginTop:6}}>Optional: type a custom label.</div>
-                      <Input value={active.assignedTo} onChange={(e)=>updateActive({ assignedTo:e.target.value })} placeholder="Custom assigned label" />
-                    </>
-                  )}
+                  <Label>Assigned to (dropdown)</Label>
+                  <select
+                    value={active.assignedTo || ""}
+                    onChange={(e)=>updateActive({ assignedTo: e.target.value })}
+                    style={{width:"100%", border:"1px solid #e2e8f0", borderRadius:12, padding:"10px 10px"}}
+                    disabled={cloudStatus!=="signed_in"} /* dropdown needs team list */
+                    title={cloudStatus!=="signed_in" ? "Sign in to use team dropdown. You can still type below." : ""}
+                  >
+                    <option value="">Unassigned</option>
+                    {members.map(m=>(
+                      <option key={m.user_id} value={memberDisplay(m)}>{memberDisplay(m)} · {roleLabel(m.role)}</option>
+                    ))}
+                  </select>
+                  <div style={{fontSize:12, color:"#64748b", marginTop:6}}>Optional: type a custom label.</div>
+                  <Input value={active.assignedTo} onChange={(e)=>updateActive({ assignedTo:e.target.value })} placeholder="Custom assigned label" />
                 </div>
 
                 <div style={{gridColumn:"1 / -1"}}>
@@ -872,66 +705,40 @@ useEffect(() => {
               {tab==="checklist" ? (
                 <>
                   <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:8}}>
-                    <div style={{fontWeight:900}}>Checklist</div>
-                    <div style={{display:"flex", gap:8, flexWrap:"wrap"}}>
-                      <Badge>Stage auto: {stageLabel(active.stage)}</Badge>
-                      <Button variant="outline" onClick={jumpToCurrentStage} style={{height:44}}>Jump to current stage</Button>
-                    </div>
+                    <div style={{fontWeight:700}}>Checklist</div>
+                    <Badge>Stage auto: {stageLabel(active.stage)}</Badge>
                   </div>
 
-                  <div ref={checklistScrollRef} style={{marginTop:10, display:"grid", gap:12}}>
-                    {groupedChecklist.map(g=>{
-                      const doneCount = g.items.filter(i=>i.status==="done").length;
-                      const totalCount = g.items.length;
-                      const isCurrent = currentStageKey===g.stage.key;
-                      return (
-                        <div key={g.stage.key} style={{border:"1px solid #e2e8f0", borderRadius:18, overflow:"hidden", background:"#fff"}}>
-                          <div
-                            ref={(el)=>{ if(el) stageHeaderRefs.current[g.stage.key]=el; }}
-                            style={{padding:12, display:"flex", justifyContent:"space-between", alignItems:"center", gap:10, background:isCurrent?"#f1f5f9":"#ffffff", borderBottom:"1px solid #e2e8f0"}}
-                          >
-                            <div style={{minWidth:0}}>
-                              <div style={{fontWeight:900}}>{g.stage.label}{isCurrent ? " · Current" : ""}</div>
-                              <div style={{fontSize:12, color:"#64748b"}}>{doneCount}/{totalCount} done</div>
+                  <div style={{marginTop:10, display:"grid", gap:10}}>
+                    {active.checklist.map(it=>(
+                      <div key={it.id} style={{border:"1px solid #e2e8f0", borderRadius:16, padding:12, background:"#fff"}}>
+                        <div style={{display:"flex", gap:10, alignItems:"flex-start"}}>
+                          <Checkbox checked={it.status==="done"} onCheckedChange={(v)=>{
+                            const status=v?"done":"not_started";
+                            updateChecklistItem(it.id, { status });
+                          }} />
+                          <div style={{flex:1}}>
+                            <div style={{display:"flex", gap:8, alignItems:"center", flexWrap:"wrap"}}>
+                              <div style={{fontWeight:700}}>{it.task}</div>
+                              <Badge>{stageLabel(it.stage)}</Badge>
+                              <Badge>{it.status}</Badge>
+                              {it.responsible ? <Badge>Resp: {it.responsible}</Badge> : null}
                             </div>
-                            <Button variant="outline" onClick={()=>markStageDone(g.stage.key)} style={{height:44}}>Mark stage done</Button>
-                          </div>
-
-                          <div style={{display:"grid", gap:10, padding:12}}>
-                            {g.items.map(it=>(
-                              <div key={it.id} style={{border:"1px solid #e2e8f0", borderRadius:16, padding:isMobile?14:12, background:"#fff"}}>
-                                <div style={{display:"flex", gap:12, alignItems:"flex-start"}}>
-                                  <div style={{transform:"scale(1.15)", transformOrigin:"top left", marginTop:2}}>
-                                    <Checkbox checked={it.status==="done"} onCheckedChange={(v)=>{
-                                      const status=v?"done":"not_started";
-                                      updateChecklistItem(it.id, { status });
-                                    }} />
-                                  </div>
-                                  <div style={{flex:1}}>
-                                    <div style={{display:"flex", gap:8, alignItems:"center", flexWrap:"wrap"}}>
-                                      <div style={{fontWeight:900, fontSize:14}}>{it.task}</div>
-                                      <Badge>{it.status}</Badge>
-                                      {it.responsible ? <Badge>Resp: {it.responsible}</Badge> : null}
-                                    </div>
-                                    <div style={{marginTop:6, fontSize:12, color:"#64748b"}}>{it.steps}</div>
-                                    <div style={{display:"grid", gridTemplateColumns:isMobile?"1fr":"repeat(auto-fit, minmax(220px,1fr))", gap:10, marginTop:10}}>
-                                      <div>
-                                        <Label>Due date (optional)</Label>
-                                        <Input style={{height:44}} type="date" value={it.dueISO || ""} onChange={(e)=>updateChecklistItem(it.id, { dueISO: e.target.value })} />
-                                      </div>
-                                      <div>
-                                        <Label>Item notes</Label>
-                                        <Input style={{height:44}} value={it.notes || ""} onChange={(e)=>updateChecklistItem(it.id, { notes: e.target.value })} placeholder="Access issues, extras..." />
-                                      </div>
-                                    </div>
-                                  </div>
-                                </div>
+                            <div style={{marginTop:6, fontSize:12, color:"#64748b"}}>{it.steps}</div>
+                            <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(220px,1fr))", gap:10, marginTop:10}}>
+                              <div>
+                                <Label>Due date (optional)</Label>
+                                <Input type="date" value={it.dueISO || ""} onChange={(e)=>updateChecklistItem(it.id, { dueISO: e.target.value })} />
                               </div>
-                            ))}
+                              <div>
+                                <Label>Item notes</Label>
+                                <Input value={it.notes || ""} onChange={(e)=>updateChecklistItem(it.id, { notes: e.target.value })} placeholder="Access issues, extras..." />
+                              </div>
+                            </div>
                           </div>
                         </div>
-                      );
-                    })}
+                      </div>
+                    ))}
                   </div>
                 </>
               ) : (
@@ -1030,110 +837,7 @@ useEffect(() => {
           </Card>
         ) : null}
 
-        {/* Mobile bottom nav */}
-        {isMobile ? (
-          <div style={{position:"fixed", left:0, right:0, bottom:0, zIndex:40, background:"rgba(255,255,255,0.92)", backdropFilter:"blur(8px)", borderTop:"1px solid #e2e8f0", padding:"10px 10px"}}>
-            <div style={{maxWidth:520, margin:"0 auto", display:"flex", gap:8, justifyContent:"space-between"}}>
-              <Button variant={!active && tab!=="team" ? "default" : "outline"} onClick={()=>{ setActiveId(null); setTab("checklist"); }} style={{flex:1}}>Leads</Button>
-              {active ? (
-                <>
-                  <Button variant={tab==="checklist" ? "default" : "outline"} onClick={()=>setTab("checklist")} style={{flex:1}}>Checklist</Button>
-                  <Button variant={tab==="activity" ? "default" : "outline"} onClick={()=>setTab("activity")} style={{flex:1}}>Activity</Button>
-                </>
-              ) : (
-                <Button variant={tab==="team" ? "default" : "outline"} onClick={()=>setTab("team")} style={{flex:1}}>Team</Button>
-              )}
-            </div>
-          </div>
-        ) : null}
-
-        {/* Quick Add modal (mobile-first) */}
-        {quickAddOpen ? (
-          <div
-            onClick={()=>setQuickAddOpen(false)}
-            style={{position:"fixed", inset:0, zIndex:60, background:"rgba(15,23,42,0.45)", display:"flex", alignItems:"flex-end", justifyContent:"center"}}
-          >
-            <div
-              onClick={(e)=>e.stopPropagation()}
-              style={{width:"100%", maxWidth:520, background:"white", borderTopLeftRadius:24, borderTopRightRadius:24, padding:16, border:"1px solid #e2e8f0"}}
-            >
-              <div style={{display:"flex", justifyContent:"space-between", alignItems:"center", gap:10}}>
-                <div style={{fontWeight:900, fontSize:16}}>Quick Add Lead</div>
-                <Button variant="outline" onClick={()=>setQuickAddOpen(false)}>Close</Button>
-              </div>
-              <div style={{marginTop:12, display:"grid", gap:10}}>
-                <div>
-                  <Label>Customer name</Label>
-                  <Input value={quickLead.customerName} onChange={(e)=>setQuickLead(q=>({ ...q, customerName:e.target.value }))} placeholder="e.g., Mrs Smith" />
-                </div>
-                <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:10}}>
-                  <div>
-                    <Label>Phone</Label>
-                    <Input value={quickLead.phone} onChange={(e)=>setQuickLead(q=>({ ...q, phone:e.target.value }))} placeholder="Mobile" />
-                  </div>
-                  <div>
-                    <Label>Source</Label>
-                    <select value={quickLead.source} onChange={(e)=>setQuickLead(q=>({ ...q, source:e.target.value }))} style={{width:"100%", border:"1px solid #e2e8f0", borderRadius:12, padding:"10px 10px", height:44}}>
-                      <option>Website</option>
-                      <option>Booklet</option>
-                      <option>Word of mouth</option>
-                      <option>Repeat customer</option>
-                      <option>Other</option>
-                    </select>
-                  </div>
-                </div>
-                <div>
-                  <Label>Address</Label>
-                  <Textarea value={quickLead.address} onChange={(e)=>setQuickLead(q=>({ ...q, address:e.target.value }))} placeholder="House name/number, street, town" />
-                </div>
-                <div style={{display:"flex", gap:10}}>
-                  <Button
-                    onClick={()=>{
-                      const preset = { ...quickLead };
-                      newLead(preset);
-                      setQuickAddOpen(false);
-                      setQuickLead({ customerName:"", phone:"", address:"", source:"Website" });
-                    }}
-                    style={{flex:1, height:48}}
-                  >
-                    Create lead
-                  </Button>
-                  <Button variant="outline" onClick={()=>{ setQuickLead({ customerName:"", phone:"", address:"", source:"Website" }); }} style={{height:48}}>Reset</Button>
-                </div>
-                <div style={{fontSize:12, color:"#64748b"}}>Creates lead + checklist instantly. You can refine details after.</div>
-              </div>
-            </div>
-          </div>
-        ) : null}
-
-        {/* Mobile floating action button */}
-        {isMobile ? (
-          <button
-            onClick={()=>setQuickAddOpen(true)}
-            style={{
-              position:"fixed",
-              right:14,
-              bottom:76,
-              height:56,
-              width:56,
-              borderRadius:18,
-              border:"1px solid #0f172a",
-              background:"#0f172a",
-              color:"#fff",
-              fontSize:28,
-              lineHeight:"56px",
-              textAlign:"center",
-              boxShadow:"0 10px 25px rgba(0,0,0,0.2)",
-              zIndex:55
-            }}
-            aria-label="New lead"
-            title="New lead"
-          >
-            +
-          </button>
-        ) : null}
-
-<div style={{marginTop:18, fontSize:12, color:"#64748b"}}>
+        <div style={{marginTop:18, fontSize:12, color:"#64748b"}}>
           📌 Installable: once deployed to a URL, open on phone → “Add to Home Screen” / “Install app”.
         </div>
       </div>
