@@ -13,6 +13,7 @@ import { Textarea } from "./components/ui/textarea.jsx";
 import { Separator } from "./components/ui/separator.jsx";
 
 const STORAGE_KEY = "looe_roofing_experts_fullsync_v1";
+const BUILD_ID = import.meta.env.VITE_BUILD_ID || "dev";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -527,7 +528,7 @@ export default function App(){
           fontSize: "12px",
         }}
       >
-        BUILD: 22fde66
+        BUILD: {BUILD_ID}
       </div>
       <div style={{ maxWidth: 1280, margin: "0 auto" }}>
         <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-end", gap:12, flexWrap:"wrap"}}>
